@@ -1,15 +1,10 @@
 import torch
-from torchvision import transforms
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-
-
 
 plt.rcParams['figure.figsize'] = (10.0, 8.0)
 plt.rcParams['image.interpolation'] = 'nearest'
 plt.rcParams['image.cmap'] = 'gray'
-
 
 def show_images(images):
     sqrtn = int(np.ceil(np.sqrt(images.shape[0])))
@@ -23,7 +18,7 @@ device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 print('GPU State:', device)
 
 # Model
-G = torch.load('Generator_epoch_200.pth')
+G = torch.load('Generator_epoch_100.pth')
 G.eval()
 
 # Generator

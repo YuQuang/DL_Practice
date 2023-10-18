@@ -162,3 +162,7 @@ cython_debug/
 # Pytorch
 *.pth
 mnist/
+
+# Dataset
+Hands/
+archive.zip

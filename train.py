@@ -1,100 +1,87 @@
+import numpy as np
+import cv2 as cv2
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import transforms
-import numpy as np
-import matplotlib.pyplot as plt
+from torch.utils.data.dataloader import DataLoader
+
 from model.model import Discriminator, Generator
+from handdataset import TrainDatasets
 
-def show_images(images):
-    sqrtn = int(np.ceil(np.sqrt(images.shape[0])))
-
-    for index, image in enumerate(images):
-        plt.subplot(sqrtn, sqrtn, index+1)
-        plt.imshow(image.reshape(28, 28))
-
-def train(model, optimizer, loss_function, data, label):
-    pred = model(data)
-    optimizer.zero_grad()
-    loss = loss_function(pred, label)
-    loss.backward()
-    optimizer.step()
-    return loss.item()
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
 
 if __name__ == "__main__":
-    plt.rcParams['image.cmap'] = 'gray'
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     G = Generator().to(device)
     D = Discriminator().to(device)
 
+    G.apply(weights_init)
+    D.apply(weights_init)
+
     # Settings
-    epochs = 200
-    batch_size = 64
+    epochs = 100
+    batch_size = 128
     loss_function = nn.BCELoss()
-    g_optimizer = optim.Adam(G.parameters(), lr=0.0006, betas=(0.1, 0.999))
-    d_optimizer = optim.Adam(D.parameters(), lr=0.0002, betas=(0.1, 0.999))
+    g_optimizer = optim.Adam(G.parameters(), lr=0.0003, betas=(0.5, 0.999))
+    d_optimizer = optim.Adam(D.parameters(), lr=0.00003, betas=(0.5, 0.999))
 
-    # Transform
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-    # Load data
-    train_set = datasets.MNIST('mnist/', train=True, download=True, transform=transform)
-    test_set = datasets.MNIST('mnist/', train=False, download=True, transform=transform)
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
-
-    # Train
+    # Dataloader
+    train_dataset = TrainDatasets("Hands\Hands", r"Hand_[0-9]+[\.]jpg")
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size//2, shuffle=False, num_workers=4)
+    
     for epoch in range(1, epochs+1):
-        d_loss, g_loss = 0, 0
-        for times, data in enumerate(train_loader):
-            """
-                This part is training the Discriminator
-            """
-            # Real data
-            real_inputs = data[0].to(device).flatten(1)
-            real_label = torch.ones(real_inputs.shape[0], 1).to(device)
+        for batch_idx, (real_data, real_label) in enumerate(train_dataloader):
+            #
+            # Train Discriminator with real data
+            #
+            real_data  = real_data.to(device)
+            real_label = real_label.unsqueeze(1).float().to(device)
 
-            # Fake data
-            noise = (torch.rand(real_inputs.shape[0], 128) - 0.5) / 0.5
-            noise = noise.to(device)
-            fake_inputs = G(noise)
-            fake_label = torch.zeros(fake_inputs.shape[0], 1).to(device)
+            d_optimizer.zero_grad()
+            d_pred = D(real_data)
+            d_real_loss = loss_function(d_pred, real_label)
+            d_real_loss.backward()
+            d_optimizer.step()
 
-            d_loss += train(
-                D,
-                d_optimizer,
-                loss_function,
-                torch.cat( (real_inputs, fake_inputs), 0),
-                torch.cat( (real_label, fake_label), 0)
-            )
+            #
+            # Train Discriminator with fake data
+            #
+            noise      = torch.from_numpy(np.random.normal(0, 0.1, (batch_size//2, 100) )).float().to(device)
+            fake_label = torch.zeros( ( batch_size//2, 1), device=device)
+            fake_data  = G(noise)
 
+            d_optimizer.zero_grad()
+            d_pred = D(fake_data)
+            d_fake_loss = loss_function(d_pred, fake_label)
+            d_fake_loss.backward()
+            d_optimizer.step()
 
-            """
-                This part is training the Generator
-            """
-            noise = (torch.rand(real_inputs.shape[0], 128)-0.5)/0.5
-            noise = noise.to(device)
-            targets = torch.ones([real_inputs.shape[0], 1]).to(device)
+            
+            #
+            # Train Generator
+            #
+            noise  = torch.from_numpy(np.random.normal(0, 0.1, (batch_size, 100) )).float().to(device)
+            target = torch.ones( (batch_size, 1), device=device )
 
-            g_loss += train(
-                nn.Sequential(G, D),
-                g_optimizer,
-                loss_function,
-                noise,
-                targets
-            )
+            g_optimizer.zero_grad()
+            d_pred = D( G(noise) )
+            g_loss = loss_function(d_pred, target)
+            g_loss.backward()
+            g_optimizer.step()
 
-            if times % 100 == 0 or times == len(train_loader):
-                print(f'[{epoch}/{epochs}, {times}/{len(train_loader)}] D_loss: {d_loss/(times+1)} G_loss: {g_loss/(times+1)}')
+            cv2.imshow("gen_img", fake_data[0].cpu().detach().numpy().reshape(256, 256, 1))
+            cv2.imshow("real_img", real_data[0].cpu().detach().numpy().reshape(256, 256, 1))
+            cv2.waitKey(10)
 
-        if epoch % 30 == 0:
-            imgs_numpy = (fake_inputs.data.cpu().numpy()+1.0)/2.0
-            show_images(imgs_numpy[:16])
-            plt.show()
+            print(f"Epochs={epoch}/{epochs}, iter={batch_idx}/{train_dataloader.__len__()}")
+            print(f"d_real_loss={d_real_loss.item()}, d_fake_loss={d_fake_loss.item()}, g_loss={g_loss.item()}")
         
         if epoch % 50 == 0:
-            torch.save(G, 'Generator_epoch_{}.pth'.format(epoch))
-            print('Model saved.')
-
-    print('Training Finished.')
+            torch.save(G, f"Generator_epoch_{epoch}.pth")
+            torch.save(D, f"Discriminator_epoch_{epoch}.pth")

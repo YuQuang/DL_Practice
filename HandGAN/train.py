@@ -18,18 +18,21 @@ def weights_init(m):
 
 if __name__ == "__main__":
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    G = Generator().to(device)
-    D = Discriminator().to(device)
+    # G = Generator().to(device)
+    # D = Discriminator().to(device)
+    G = torch.load("Generator_epoch_100.pth")
+    D = torch.load("Discriminator_epoch_100.pth")
 
-    G.apply(weights_init)
-    D.apply(weights_init)
+    # G.apply(weights_init)
+    # D.apply(weights_init)
 
     # Settings
-    epochs = 100
+    epochs = 500
     batch_size = 128
+
     loss_function = nn.BCELoss()
-    g_optimizer = optim.Adam(G.parameters(), lr=0.0003, betas=(0.5, 0.999))
-    d_optimizer = optim.Adam(D.parameters(), lr=0.00003, betas=(0.5, 0.999))
+    g_optimizer = optim.Adam(G.parameters(), lr=0.0035, betas=(0.5, 0.999))
+    d_optimizer = optim.Adam(D.parameters(), lr=0.00001, betas=(0.5, 0.999))
 
     # Dataloader
     train_dataset = TrainDatasets("Hands\Hands", r"Hand_[0-9]+[\.]jpg")

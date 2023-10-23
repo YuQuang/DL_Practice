@@ -166,3 +166,4 @@ mnist/
 # Dataset
 Hands/
 archive.zip
+*.txt

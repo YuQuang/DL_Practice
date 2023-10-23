@@ -8,14 +8,9 @@ from ops import linear, conv2d, dropout, maxpool
 class MyAlexNet(nn.Module):
 
     def __init__(self, num_classes=10):
-        original_model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
-        freeze_layers = True
         super(MyAlexNet, self).__init__()
 
-        # freeze the pre-trained features
-        if freeze_layers:
-            for i, param in original_model.features.named_parameters():
-                param.requires_grad = False
+        original_model = models.alexnet(weights=models.AlexNet_Weights.DEFAULT)
 
         self.features = nn.Sequential(*list(original_model.features.children()))
         self.classifier = nn.Sequential(*list(original_model.classifier.children())[:-1])
@@ -36,15 +31,6 @@ class MyAlexNet(nn.Module):
 
         self.weight_to_be_used.append(self.last_layer.weight)
         self.bias_to_be_used.append(self.last_layer.bias)
-
-        # when you add the convolution and batch norm, below will be useful
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
 
     def forward(self, x, meta_loss=None, meta_step_size=None, stop_gradient=False):
 

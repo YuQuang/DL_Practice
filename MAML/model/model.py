@@ -2,25 +2,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data.dataloader import DataLoader
+import cv2 as cv2
 import torchvision.models as models
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import transforms
 
+from dataset import miniImage
 from learner import MyAlexNet
 from ops import linear, conv2d, dropout, maxpool
 
 class Meta(nn.Module):
-    def __init__(self, k_way=5, n_shot=10):
+    def __init__(self, device):
         super(Meta, self).__init__()
         #
         # Task
         #
-        self.network = MyAlexNet(num_classes=10)
-        self.task_loss_fn = nn.CrossEntropyLoss()
-        self.task_optimer = optim.Adam(
-            filter(lambda p: p.requires_grad, self.network.parameters()),
-            lr=1e-6, weight_decay=1e-8)
+        self.network = MyAlexNet(num_classes=5).to(device)
 
         #
         # Meta Model
@@ -29,7 +25,7 @@ class Meta(nn.Module):
 
         self.features = nn.Sequential(*list(original_model.features.children()))
         self.classifier = nn.Sequential(*list(original_model.classifier.children())[:-1])
-        self.last_layer = nn.Linear(4096, 10)
+        self.last_layer = nn.Linear(4096, 5)
 
         self.weight_to_be_used = []
         self.bias_to_be_used = []
@@ -47,12 +43,15 @@ class Meta(nn.Module):
         self.weight_to_be_used.append(self.last_layer.weight)
         self.bias_to_be_used.append(self.last_layer.bias)
 
-    def assign_meta_to_network(self):
-        for index, weight in enumerate(self.weight_to_be_used):
-            self.network.weight_to_be_used[index] = weight
+    def assign_meta_to_network(self, device):
+        with torch.no_grad():
+            for index, weight in enumerate(self.weight_to_be_used):
+                new_weight = torch.from_numpy(weight.detach().cpu().numpy()).to(device)
+                self.network.weight_to_be_used[index] = torch.nn.Parameter(new_weight)
 
-        for index, bias in enumerate(self.bias_to_be_used):
-            self.network.bias_to_be_used[index] = bias
+            for index, bias in enumerate(self.bias_to_be_used):
+                new_bias = torch.from_numpy(bias.detach().cpu().numpy()).to(device)
+                self.network.bias_to_be_used[index] = torch.nn.Parameter(new_bias)
 
     def forward(self, x, meta_loss=None, meta_step_size=None, stop_gradient=False):
         # Features Block
@@ -132,94 +131,80 @@ class Meta(nn.Module):
         x = F.softmax(input=x, dim=-1)
         return x
     
-    def train_task(self, support_set, query_set):
-        self.network.train()            
-        
-        #
-        # Support_set train task
-        #
-        for data, label in support_set:
+    def support_task(self, data, target, step=1, device="cpu"):
+        self.network.train()
+
+        task_loss_fn = nn.CrossEntropyLoss()
+        task_optimer = optim.SGD([
+            { "params": self.network.bias_to_be_used },
+            { "params": self.network.weight_to_be_used }
+        ], lr=0.01)
+        for _ in range(step):
+            data = data.to(device)
+            target = target.to(device)
             y = self.network(data)
 
-            self.task_optimer.zero_grad()
-            loss = self.task_loss_fn(y, label)
+            task_optimer.zero_grad()
+            loss = task_loss_fn(y, target)
             loss.backward()
-            self.task_optimer.step()
-            
+            task_optimer.step()
             print(f"Support_set task loss {loss.item()}")
-            break
 
-        #
-        # Query_set train task
-        #
-        for data, label in query_set:
-            y = self.network(data)
+    def query_task(self, data, target, optimizer, device="cpu"):
+        self.network.train()
 
-            self.task_optimer.zero_grad()
-            loss = self.task_loss_fn(y, label)
-            loss.backward()
+        task_loss_fn = nn.CrossEntropyLoss()
+        task_optimer = optim.SGD([
+            { "params": self.network.bias_to_be_used },
+            { "params": self.network.weight_to_be_used }
+        ], lr=0.01)
 
-            print(f"Query_set task loss {loss.item()}")
-            break
-
-if __name__ == "__main__":
-    #
-    # Init Model
-    #
-    meta = Meta()
-    epochs = 10
-    n_shot = 20
-    batch_size = 32
-    meta_loss_fn = nn.CrossEntropyLoss()
-    meta_optimizer = optim.Adam([
-        { "params": meta.weight_to_be_used }, { "params": meta.bias_to_be_used }
-    ], lr=1e-4, weight_decay=1e-8)
-
-    #
-    # Load Dataset
-    #
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(lambda x: x.repeat(3,1,1)),
-        transforms.Normalize((0.5,), (0.5,)),
-        transforms.Resize((224, 224)),
-    ])
-    mnist_train = datasets.MNIST('mnist/', train=True, download=True, transform=transform)
-    train_support_set, train_query_set = torch.utils.data.random_split(mnist_train, [0.9, 0.1])
-    train_support_loader = DataLoader(train_support_set, batch_size=n_shot, shuffle=True)
-    train_query_loader = DataLoader(train_query_set, batch_size=n_shot, shuffle=True)
-
-    mnist_test = datasets.MNIST('mnist/', train=False, download=True, transform=transform)
-    test_query_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
-
-    #
-    # Train Meta Model
-    #
-    for epoch in range(epochs):
-        meta.train_task(support_set=train_support_loader, query_set=train_query_loader)
+        data = data.to(device)
+        target = target.to(device)
+        y = self.network(data)
+        task_optimer.zero_grad()
+        loss = task_loss_fn(y, target)
+        loss.backward()
 
         grad_list = []
         for _, parameter in meta.network.named_parameters(recurse=False):
-            grad_list.append(parameter.grad)
+                grad_list.append(parameter.grad)
 
-        for index, (name, parameter) in enumerate(meta.named_parameters(recurse=False)):
+        for index, (_, parameter) in enumerate(meta.named_parameters(recurse=False)):
             parameter.grad = grad_list[index]
-        meta_optimizer.step()
+        optimizer.step()
 
-        meta.assign_meta_to_network()
-        print(f"Epoch={epoch}")
+        print(f"Query_set task loss {loss.item()}")
 
+if __name__ == "__main__":
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     #
-    # Test Meta Model
+    # Init Model
     #
+    meta = Meta(device).to(device)
+    epochs = 1
+    meta_loss_fn = nn.CrossEntropyLoss()
+    meta_optimizer = optim.SGD([
+        { "params": meta.weight_to_be_used }, { "params": meta.bias_to_be_used }
+    ], lr=0.01)
+
+    train_dataset = miniImage("./miniImage/")
+    train_loader = DataLoader(train_dataset, batch_size=1)
+
     for epoch in range(epochs):
-        for data, label in test_query_loader:
+        #
+        # Train Meta Model
+        #
+        for iter_count, (spt_data, spt_lable, qry_data, qry_label) in enumerate(train_loader):
+            meta.support_task(spt_data[0], spt_lable[0], step=2, device=device)
+            meta.query_task(qry_data[0], qry_label[0], optimizer=meta_optimizer, device=device)
+            meta.assign_meta_to_network(device)
 
-            y = meta(data)
+            print(f"\nEpoch={epoch+1}/{epochs}, Iter={iter_count+1}/{train_loader.__len__()}")
 
-            meta_optimizer.zero_grad()
-            loss = meta_loss_fn(y, label)
-            loss.backward()
-            meta_optimizer.step()
+            cv2.imshow("Spport_set", spt_data[0][0].numpy().reshape(224, 224, 3))
+            cv2.imshow("Query_set", qry_data[0][0].numpy().reshape(224, 224, 3))
+            cv2.waitKey(10)
 
-            print(f"Meta train loss={loss.item()}")
+            if (iter_count+1) % 2500 == 0:
+                torch.save(meta, f"Meta_{iter_count}.pt")

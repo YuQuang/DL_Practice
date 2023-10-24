@@ -1,10 +1,18 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
 from model import Meta
 from torch.utils.data.dataloader import DataLoader
 from dataset import miniImage
+
+def count_acc(y, target):
+    corect_count = 0
+    for index, y_index in enumerate(F.softmax(y, 1).argmax(1)):
+        if y_index.item() == target[index]: corect_count+=1
+
+    return corect_count/target.__len__() * 100
 
 if __name__ == "__main__":
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -12,36 +20,43 @@ if __name__ == "__main__":
     #
     # Init model
     #
-    meta = torch.load("Meta_29999.pt").to(device)
-    epochs = 10
+    meta = torch.load("Meta_7000.pt").to(device)
+    epochs = 20
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(meta.parameters(), lr=0.0001, weight_decay=1e-5)
+    optimizer = optim.Adam(meta.parameters(), lr=0.0002, weight_decay=1e-6)
 
     #
     # Prepare dataset
     #
-    test_dataset = miniImage("./miniImage/", n_way=5, k_shot=5, k_query=15)
+    test_dataset = miniImage("./miniImage/", n_way=5, k_shot=5, k_query=40)
     test_loader = DataLoader(test_dataset, batch_size=1)
 
     #
     # Start fine-tune
     #
     for epoch in range(epochs):
-        for spt_data, spt_label, qry_data, qry_label in test_loader:
+        for spt_data, spt_label, _, _ in test_loader:
             spt_data = spt_data[0].to(device)
             spt_label = spt_label[0].to(device)
-            qry_data = qry_data[0].to(device)
-            qry_label = qry_label[0].to(device)
 
-            y = meta(spt_data)
-
+            y, _ = meta(spt_data)
             optimizer.zero_grad()
             loss = loss_fn(y, spt_label)
             loss.backward()
             optimizer.step()
-
+            
+            acc = count_acc(y, spt_label)
             break
+        print(f"Epoch={epoch}/{epochs}, train_loss={loss.item()}, train_acc={acc}%")
 
-        print(f"Epoch={epoch}/{epochs}, loss={loss.item()}")
-    
-    #
+        for _, _, qry_data, qry_label in test_loader:
+            qry_data = qry_data[0].to(device)
+            qry_label = qry_label[0].to(device)
+
+            y, _ = meta(qry_data)
+            loss = loss_fn(y, qry_label)
+            acc = count_acc(y, qry_label)
+            break
+        print(f"test_loss={loss.item()}, test_acc={acc}%")
+
+        

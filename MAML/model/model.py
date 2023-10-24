@@ -128,8 +128,8 @@ class Meta(nn.Module):
                  meta_step_size=meta_step_size,
                  stop_gradient=stop_gradient)
 
-        x = F.softmax(input=x, dim=-1)
-        return x
+        pred = { "prediction": F.softmax(input=x, dim=-1) }
+        return x, pred
     
     def support_task(self, data, target, step=1, device="cpu"):
         self.network.train()
@@ -138,11 +138,11 @@ class Meta(nn.Module):
         task_optimer = optim.SGD([
             { "params": self.network.bias_to_be_used },
             { "params": self.network.weight_to_be_used }
-        ], lr=0.0005)
+        ], lr=0.01)
         for _ in range(step):
             data = data.to(device)
             target = target.to(device)
-            y = self.network(data)
+            y, _ = self.network(data)
 
             task_optimer.zero_grad()
             loss = task_loss_fn(y, target)
@@ -157,11 +157,11 @@ class Meta(nn.Module):
         task_optimer = optim.SGD([
             { "params": self.network.bias_to_be_used },
             { "params": self.network.weight_to_be_used }
-        ], lr=0.0005)
+        ], lr=0.01)
 
         data = data.to(device)
         target = target.to(device)
-        y = self.network(data)
+        y, _ = self.network(data)
         task_optimer.zero_grad()
         optimizer.zero_grad()
         loss = task_loss_fn(y, target)
@@ -185,15 +185,16 @@ if __name__ == "__main__":
     #
     # Init Model
     #
-    meta = Meta(device).to(device)
+    # meta = Meta(device).to(device)
+    meta = torch.load("Meta_7000.pt").to(device)
     epochs = 1
     meta_loss_fn = nn.CrossEntropyLoss()
-    meta_optimizer = optim.SGD([
+    meta_optimizer = optim.Adam([
         { "params": meta.weight_to_be_used }, { "params": meta.bias_to_be_used }
-    ], lr=0.01)
+    ], lr=0.001)
 
     train_dataset = miniImage("./miniImage/")
-    train_loader = DataLoader(train_dataset, batch_size=8)
+    train_loader = DataLoader(train_dataset, batch_size=4)
 
     for epoch in range(epochs):
         #
@@ -201,7 +202,7 @@ if __name__ == "__main__":
         #
         for iter_count, (spt_data, spt_lable, qry_data, qry_label) in enumerate(train_loader):
             for batch, _ in enumerate(spt_data):
-                meta.support_task(spt_data[batch], spt_lable[batch], step=2, device=device)
+                meta.support_task(spt_data[batch], spt_lable[batch], step=1, device=device)
                 meta.query_task(qry_data[batch], qry_label[batch], optimizer=meta_optimizer, device=device)
             meta.assign_meta_to_network(device)
 
@@ -211,5 +212,5 @@ if __name__ == "__main__":
             cv2.imshow("Query_set", qry_data[0][0].numpy().reshape(224, 224, 3))
             cv2.waitKey(10)
 
-            if (iter_count+1) % 100 == 0:
+            if (iter_count+1) % 2000 == 0:
                 torch.save(meta, f"Meta_{iter_count+1}.pt")

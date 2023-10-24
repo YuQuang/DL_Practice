@@ -109,8 +109,8 @@ class MyAlexNet(nn.Module):
                  meta_step_size=meta_step_size,
                  stop_gradient=stop_gradient)
 
-        x = F.softmax(input=x, dim=-1)
-        return x
+        pred = { "prediction": F.softmax(input=x, dim=-1) }
+        return x, pred
 
 if __name__ == "__main__":
     model = MyAlexNet(5)

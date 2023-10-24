@@ -138,7 +138,7 @@ class Meta(nn.Module):
         task_optimer = optim.SGD([
             { "params": self.network.bias_to_be_used },
             { "params": self.network.weight_to_be_used }
-        ], lr=0.01)
+        ], lr=0.0005)
         for _ in range(step):
             data = data.to(device)
             target = target.to(device)
@@ -157,12 +157,13 @@ class Meta(nn.Module):
         task_optimer = optim.SGD([
             { "params": self.network.bias_to_be_used },
             { "params": self.network.weight_to_be_used }
-        ], lr=0.01)
+        ], lr=0.0005)
 
         data = data.to(device)
         target = target.to(device)
         y = self.network(data)
         task_optimer.zero_grad()
+        optimizer.zero_grad()
         loss = task_loss_fn(y, target)
         loss.backward()
 
@@ -173,6 +174,9 @@ class Meta(nn.Module):
         for index, (_, parameter) in enumerate(meta.named_parameters(recurse=False)):
             parameter.grad = grad_list[index]
         optimizer.step()
+
+        task_optimer.zero_grad()
+        optimizer.zero_grad()
 
         print(f"Query_set task loss {loss.item()}")
 
@@ -189,15 +193,16 @@ if __name__ == "__main__":
     ], lr=0.01)
 
     train_dataset = miniImage("./miniImage/")
-    train_loader = DataLoader(train_dataset, batch_size=1)
+    train_loader = DataLoader(train_dataset, batch_size=8)
 
     for epoch in range(epochs):
         #
         # Train Meta Model
         #
         for iter_count, (spt_data, spt_lable, qry_data, qry_label) in enumerate(train_loader):
-            meta.support_task(spt_data[0], spt_lable[0], step=2, device=device)
-            meta.query_task(qry_data[0], qry_label[0], optimizer=meta_optimizer, device=device)
+            for batch, _ in enumerate(spt_data):
+                meta.support_task(spt_data[batch], spt_lable[batch], step=2, device=device)
+                meta.query_task(qry_data[batch], qry_label[batch], optimizer=meta_optimizer, device=device)
             meta.assign_meta_to_network(device)
 
             print(f"\nEpoch={epoch+1}/{epochs}, Iter={iter_count+1}/{train_loader.__len__()}")
@@ -206,5 +211,5 @@ if __name__ == "__main__":
             cv2.imshow("Query_set", qry_data[0][0].numpy().reshape(224, 224, 3))
             cv2.waitKey(10)
 
-            if (iter_count+1) % 2500 == 0:
-                torch.save(meta, f"Meta_{iter_count}.pt")
+            if (iter_count+1) % 100 == 0:
+                torch.save(meta, f"Meta_{iter_count+1}.pt")

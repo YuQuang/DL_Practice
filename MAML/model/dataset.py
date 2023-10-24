@@ -22,6 +22,7 @@ class miniImage(Dataset):
         #
         all_dir = [ f for f in glob.glob(os.path.join(path, "*")) if os.path.isdir(f) ]
         self.all_dir_combination = [ comb for comb in itertools.combinations(all_dir, n_way)]
+        random.shuffle(self.all_dir_combination)
         
     def __getitem__(self, index):
         train_dir_list = self.all_dir_combination[index]

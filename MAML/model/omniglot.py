@@ -7,8 +7,8 @@ import cv2 as cv2
 import numpy as np
 from torch.utils.data.dataset import Dataset
 
-class miniImage(Dataset):
-    def __init__(self, path, n_way=5, k_shot=5, k_query=15):
+class Omniglot(Dataset):
+    def __init__(self, path, n_way=5, k_shot=5, k_query=15, background=True):
         #
         # Parameters
         #
@@ -16,12 +16,15 @@ class miniImage(Dataset):
         self.k_shot   = k_shot
         self.k_query  = k_query
         self.img_size = 224
+        self.background = background
         
         #
         # Total class combination
         #
-        all_dir = [ f for f in glob.glob(os.path.join(path, "*")) if os.path.isdir(f) ]
-        self.all_dir_combination = [ comb for comb in itertools.combinations(all_dir, n_way)]
+        image_path = "images_background" if self.background else "images_evaluation" 
+        all_dir = [ f for f in glob.glob(os.path.join(path, image_path, "*", "*")) if os.path.isdir(f) ]
+        random.shuffle(all_dir)
+        self.all_dir_combination = [ comb for comb in itertools.combinations(all_dir[:100], n_way)]
         random.shuffle(self.all_dir_combination)
         
     def __getitem__(self, index):
@@ -31,7 +34,7 @@ class miniImage(Dataset):
         query_label_list, query_set_list = [], []
         for index, train_dir in enumerate(train_dir_list):
             image_list = random.choices(
-                glob.glob(os.path.join(train_dir, "*.JPEG")),
+                glob.glob(os.path.join(train_dir, "*.png")),
                 k=self.k_shot
             )
             #
@@ -62,7 +65,7 @@ class miniImage(Dataset):
             # These part is for query set
             #
             image_list = random.choices(
-                glob.glob(os.path.join(train_dir, "*.JPEG")),
+                glob.glob(os.path.join(train_dir, "*.png")),
                 k=self.k_query
             )
 
@@ -88,3 +91,13 @@ class miniImage(Dataset):
         
     def __len__(self):
         return self.all_dir_combination.__len__()
+    
+if __name__ == "__main__":
+    from torch.utils.data.dataloader import DataLoader
+    dataset     = Omniglot("./omniglot/omniglot-py/", background=False)
+    data_loader = DataLoader(dataset, batch_size=1)
+
+    for spt_data, spt_label, qry_data, qry_label in data_loader:
+        print(spt_data[0][0].numpy().shape)
+        break
+    

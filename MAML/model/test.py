@@ -5,7 +5,8 @@ import torch.nn.functional as F
 
 from model import Meta
 from torch.utils.data.dataloader import DataLoader
-from dataset import miniImage
+from miniimage import MiniImage
+from omniglot import Omniglot
 
 def count_acc(y, target):
     corect_count = 0
@@ -20,15 +21,17 @@ if __name__ == "__main__":
     #
     # Init model
     #
-    meta = torch.load("Meta_7000.pt").to(device)
-    epochs = 20
+    meta = torch.load("Omniglot_32Batch4Task_5way_5shot_1000.pth").to(device)
+    epochs = 10
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(meta.parameters(), lr=0.0002, weight_decay=1e-6)
+    optimizer = optim.Adam(meta.parameters(), lr=0.0001, weight_decay=1e-8)
 
     #
     # Prepare dataset
     #
-    test_dataset = miniImage("./miniImage/", n_way=5, k_shot=5, k_query=40)
+    # test_dataset = miniImage("./miniImage/", n_way=5, k_shot=5, k_query=100)
+    # test_loader = DataLoader(test_dataset, batch_size=1)
+    test_dataset = Omniglot("./omniglot/omniglot-py/", n_way=5, k_shot=5, k_query=20, background=False)
     test_loader = DataLoader(test_dataset, batch_size=1)
 
     #

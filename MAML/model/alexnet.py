@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
 import torchvision.models as models
-from dataset import miniImage
+from miniimage import MiniImage
+from omniglot import Omniglot
 
 def count_acc(y, target):
     corect_count = 0
@@ -20,16 +21,18 @@ if __name__ == "__main__":
     # Init Model
     #
     alexnet = models.alexnet(weights=models.AlexNet_Weights.DEFAULT).to(device)
-    epochs = 20
+    epochs = 10
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(alexnet.parameters(), lr=0.0002, weight_decay=1e-6)
+    optimizer = optim.Adam(alexnet.parameters(), lr=0.0001, weight_decay=1e-8)
 
     #
     # Dataset
     #
-    test_dataset = miniImage("./miniImage", n_way=5, k_shot=5, k_query=40)
-    test_loader  = DataLoader(test_dataset, batch_size=1)
-    
+    # test_dataset = miniImage("./miniImage", n_way=5, k_shot=5, k_query=100)
+    # test_loader  = DataLoader(test_dataset, batch_size=1)
+    test_dataset = Omniglot("./omniglot/omniglot-py/", n_way=5, k_shot=5, k_query=20, background=False)
+    test_loader = DataLoader(test_dataset, batch_size=1)
+
     #
     # Fine-tune
     #

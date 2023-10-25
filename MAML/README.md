@@ -1,9 +1,15 @@
 # MAML with pytorch
 Impelement MAML with pytorch
+[arxiv paper](https://arxiv.org/abs/1703.03400)
 
-## Run sample
+## Run training
 ``` bash
 python model/model.py
+```
+
+## Run Testing
+``` bash
+python model/test.py
 ```
 
 ## Task model using AlexNet

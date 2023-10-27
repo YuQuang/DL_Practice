@@ -21,10 +21,10 @@ if __name__ == "__main__":
     #
     # Init model
     #
-    meta = torch.load("Omniglot_32Batch4Task_5way_5shot_1000.pth").to(device)
+    meta = torch.load("Omniglot_32Batch4Task_5way_5shot_2500.pth").to(device)
     epochs = 10
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(meta.parameters(), lr=0.0001, weight_decay=1e-8)
+    optimizer = optim.Adam(meta.parameters(), lr=0.00005, weight_decay=1e-8)
 
     #
     # Prepare dataset
